@@ -16,18 +16,12 @@ An **asset** is any non-code material that the project includes, ships, embeds, 
 - sample, demo and test documents that are committed or published;
 - anything the app renders from those.
 
-### 1.1 Nothing from Adobe products
+### 1.1 No third-party proprietary visual assets
 
-- **Never** use icons, images, artwork, logos, UI graphics, fonts, stamps, cursors, sample documents or any other asset taken from an Adobe product, installer, website, document or package.
-  - "Adobe product" includes Acrobat, Reader, Photoshop, Illustrator, Premiere, Lightroom and Creative Cloud, including the fonts they install (for example Minion, Myriad, Kozuka and the Adobe CJK families).
-  - This holds even when Adobe publishes the material under an open licence, if it is **visual design**. For example, **do not** use Source Han, Source Serif or Source Sans, or Noto CJK, which is Source Han rebranded.
-- **Never** recreate, trace, redraw or closely imitate an Adobe icon or graphic. Our icons come from Lucide, and our visual design is our own.
-- Screenshots of Adobe software exist only as private, local observation notes under `plan/acrobat/`, which is gitignored. They must **never** be committed, published, linked, shown in docs, used as a design source to trace, or placed anywhere else in the repository or its outputs.
-- The only Adobe-authored material allowed is **non-visual technical data** that is openly licensed and required for PDF compatibility. Each item needs its own entry in `ATTRIBUTION.toml` with `adobe_data = true`, and the list below is closed:
-  - The CMap resources (BSD-3-Clause), bundled inside the `hayro-cmap` dependency.
-  - The standard-14 font metrics and encoding tables in the PDF specification. They are data, not typefaces. They are embedded as code in hayro, and as our own generated table in `crates/fonts/src/std14_metrics.rs` (approved by the owner, 2026-10-08; that file holds the data alone, so the code reading it can change without re-attesting the table), which is what generated appearances measure with and what survives hayro being retired.
-
-  Adding anything to this list needs the user's explicit approval.
+- **Never** use icons, images, artwork, logos, UI graphics, fonts, stamps, cursors, sample documents, or other visual assets taken from another product, installer, website, document, or package unless its licence expressly permits the proposed use and the required attribution is recorded.
+- **Never** recreate, trace, redraw, or closely imitate another product's icon, graphic, or distinctive visual design. Project visual design must be independently created.
+- Never commit, publish, link, document, or use third-party product screenshots as a design source. Use only synthetic fixtures and contributor-created screenshots.
+- Non-visual technical compatibility data may be included only when its licence permits it and it is recorded in `ATTRIBUTION.toml`. Adding such data requires the user's explicit approval.
 
 ### 1.2 Only open, provable licences
 
@@ -63,7 +57,7 @@ Anything else is forbidden, including assets whose licence you cannot prove from
   - an entry's hash does not match;
   - a licence is not on the allowlist;
   - a licence file is missing;
-  - an image, icon or font names Adobe as author or source.
+  - an image, icon or font has an unapproved proprietary author or source.
 - **`cargo xtask demo-pdf`** downloads its fonts only from `ATTRIBUTION.toml` entries, pinned by SHA-256. Afterwards it **fails if the PDF embeds any font not in its allowlist**, which catches the browser silently falling back to a system font.
 
 ### 1.4 Fonts live in craft-fonts
@@ -77,7 +71,7 @@ Anything else is forbidden, including assets whose licence you cannot prove from
 Fonts go to craft-fonts instead (§1.4).
 
 1. Find an asset under an allowed licence from its **original source**: the author's repository or a release, not a random mirror. Record the exact version or commit.
-2. Confirm the authorship. It must not be Adobe (§1.1). Keep the licence text.
+2. Confirm the authorship and licence permit the intended use (§1.1). Keep the licence text.
 3. Add the file together with its licence file, plus an `ATTRIBUTION.toml` entry. Run `cargo xtask assets --write`, then `cargo xtask assets`.
 4. If an asset's origin or licence is unclear, **do not add it.** Ask the user.
 
@@ -87,10 +81,10 @@ If you find an asset that breaks these rules, stop and remove it from the reposi
 
 ## 2. Clean-room rules (summary; details in `CLAUDE.md` and `plan/adr/0001`)
 
-- Never read, disassemble or copy anything inside the Acrobat bundle. Only names and listings are allowed, and **never** open `Contents/Resources/JavaScripts/`.
+- Never read, disassemble, or copy proprietary application bundles or resources.
 - Behaviour comes only from public specifications (ISO 32000-2, the Arlington model), public documentation and black-box observation.
 - Never copy GPL/AGPL code. Copyleft tools run only as external oracle processes.
-- Observe Acrobat only with synthetic fixtures. Never capture personal data, account information or recent files.
+- When evaluating interoperability, use only synthetic fixtures. Never capture personal data, account information, or recent files.
 - Shared real-file test oracles (Photoshop-authored PSDs, etc.) live in [`storytold/photocraft-corpus`](https://github.com/storytold/photocraft-corpus), explained in [craftrules `standards/test-corpora.md`](https://github.com/storytold/craftrules/blob/main/standards/test-corpora.md) (internal). Never commit large binary fixtures to this repo; fetch them pinned by commit and sha256-verified, as PhotoCraft does with `cargo xtask corpus`.
 
 ## 3. Agent control (automation and MCP)
@@ -99,7 +93,7 @@ If you find an asset that breaks these rules, stop and remove it from the reposi
 - **The UI control channel is opt-in too.** It runs only when the app is launched with `--control <file>`. It binds to loopback, uses a fresh random token per launch, and writes it to an owner-only file. Never enable it by default, widen the bind address, or log the token.
 - **The MCP server is opt-in.** Never make the app, the CLI or an installer start it, register it with an agent, or listen on a port by default. It runs only when a user (or an agent the user configured) launches `pdfcraft-cli mcp`. Any future network transport must be off by default, bound to loopback and authenticated with a token.
 - **Safe by default.** Tools must never discard unsaved work silently, must write atomically, must honour `--root`, and must return errors an agent can act on (say what was wrong and what is allowed).
-- **Track parity honestly.** Every user-facing feature has an entry in `parity/acrobat-features.toml`. Mark it `shipped` only when it works end to end and the entry cites a passing test (`evidence`); `cargo xtask parity` (part of `xtask ci`) rejects claims whose commands, tools or tests don't exist.
+- **Track compatibility honestly.** Every user-facing feature has an entry in `parity/acrobat-features.toml`. Mark it `shipped` only when it works end to end and the entry cites a passing test (`evidence`); `cargo xtask parity` (part of `xtask ci`) rejects claims whose commands, tools or tests don't exist.
 - **Use it to test.** Agents should drive the engine through `pdfcraft-cli run --script` or the MCP tools, and look at `page_render` output, to check their own changes. For UI changes, launch the app with `--control` and use `pdfcraft-cli ui` (`inspect`, `click`, `screenshot`) to check the real interface.
 
 ## 4. Never crash

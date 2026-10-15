@@ -2,7 +2,9 @@
 //! credit card numbers, US Social Security numbers and dates. Each matcher works on a page's
 //! text as characters and returns character ranges; callers map them to glyphs and areas.
 
+use std::net::Ipv6Addr;
 use std::ops::Range;
+use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Pattern {
@@ -11,9 +13,51 @@ pub enum Pattern {
     CreditCard,
     Ssn,
     Date,
+    Pan,
+    Aadhaar,
+    Gstin,
+    IndianMobile,
+    UpiId,
+    Ifsc,
+    Passport,
+    VoterId,
+    Cin,
+    IpAddress,
 }
 
-pub const PATTERNS: [Pattern; 5] = [Pattern::Phone, Pattern::Email, Pattern::CreditCard, Pattern::Ssn, Pattern::Date];
+pub const PATTERNS: [Pattern; 15] = [
+    Pattern::Phone,
+    Pattern::Email,
+    Pattern::CreditCard,
+    Pattern::Ssn,
+    Pattern::Date,
+    Pattern::Pan,
+    Pattern::Aadhaar,
+    Pattern::Gstin,
+    Pattern::IndianMobile,
+    Pattern::UpiId,
+    Pattern::Ifsc,
+    Pattern::Passport,
+    Pattern::VoterId,
+    Pattern::Cin,
+    Pattern::IpAddress,
+];
+
+/// Patterns included by the one-click India-sensitive-data redaction option.
+pub const INDIA_SENSITIVE_PATTERNS: [Pattern; 12] = [
+    Pattern::Pan,
+    Pattern::Aadhaar,
+    Pattern::Gstin,
+    Pattern::IndianMobile,
+    Pattern::UpiId,
+    Pattern::Ifsc,
+    Pattern::Passport,
+    Pattern::VoterId,
+    Pattern::Cin,
+    Pattern::Email,
+    Pattern::CreditCard,
+    Pattern::IpAddress,
+];
 
 impl Pattern {
     pub fn label(self) -> &'static str {
@@ -23,6 +67,16 @@ impl Pattern {
             Pattern::CreditCard => "Credit Cards",
             Pattern::Ssn => "Social Security Numbers",
             Pattern::Date => "Dates",
+            Pattern::Pan => "PAN (India)",
+            Pattern::Aadhaar => "Aadhaar (India)",
+            Pattern::Gstin => "GSTIN (India)",
+            Pattern::IndianMobile => "Mobile Numbers (India)",
+            Pattern::UpiId => "UPI IDs (India)",
+            Pattern::Ifsc => "IFSC Codes (India)",
+            Pattern::Passport => "Passport Numbers (India)",
+            Pattern::VoterId => "Voter IDs (India)",
+            Pattern::Cin => "CINs (India)",
+            Pattern::IpAddress => "IP Addresses",
         }
     }
 
@@ -33,6 +87,16 @@ impl Pattern {
             Pattern::CreditCard => "credit-card",
             Pattern::Ssn => "ssn",
             Pattern::Date => "date",
+            Pattern::Pan => "pan",
+            Pattern::Aadhaar => "aadhaar",
+            Pattern::Gstin => "gstin",
+            Pattern::IndianMobile => "indian-mobile",
+            Pattern::UpiId => "upi-id",
+            Pattern::Ifsc => "ifsc",
+            Pattern::Passport => "passport",
+            Pattern::VoterId => "voter-id",
+            Pattern::Cin => "cin",
+            Pattern::IpAddress => "ip-address",
         }
     }
 
@@ -166,6 +230,172 @@ fn credit_card(s: &[char], i: usize) -> Option<usize> {
     luhn(&digits).then_some(end - i)
 }
 
+fn ascii_alpha(c: Option<&char>) -> bool {
+    c.is_some_and(char::is_ascii_alphabetic)
+}
+
+fn ascii_alphanumeric(c: Option<&char>) -> bool {
+    c.is_some_and(char::is_ascii_alphanumeric)
+}
+
+/// A fixed-width identifier at `i`, with ASCII letters or digits selected by `check`.
+/// It must be separated from adjacent identifier characters so we do not redact a substring.
+fn identifier(s: &[char], i: usize, checks: &[fn(Option<&char>) -> bool]) -> Option<usize> {
+    if ascii_alphanumeric(i.checked_sub(1).and_then(|p| s.get(p))) {
+        return None;
+    }
+    for (offset, check) in checks.iter().enumerate() {
+        if !check(s.get(i + offset)) {
+            return None;
+        }
+    }
+    let end = i.checked_add(checks.len())?;
+    (!ascii_alphanumeric(s.get(end))).then_some(checks.len())
+}
+
+fn pan(s: &[char], i: usize) -> Option<usize> {
+    const CHECKS: [fn(Option<&char>) -> bool; 10] =
+        [ascii_alpha, ascii_alpha, ascii_alpha, ascii_alpha, ascii_alpha, digit, digit, digit, digit, ascii_alpha];
+    identifier(s, i, &CHECKS)
+}
+
+fn aadhaar(s: &[char], i: usize) -> Option<usize> {
+    if !matches!(s.get(i), Some('2'..='9')) || digit(i.checked_sub(1).and_then(|p| s.get(p))) {
+        return None;
+    }
+    let grouped = |first: usize, sep: char| {
+        (0..4).all(|n| digit(s.get(first + n)))
+            && s.get(first + 4) == Some(&sep)
+            && (0..4).all(|n| digit(s.get(first + 5 + n)))
+            && s.get(first + 9) == Some(&sep)
+            && (0..4).all(|n| digit(s.get(first + 10 + n)))
+            && !digit(s.get(first + 14))
+    };
+    if (0..12).all(|n| digit(s.get(i + n))) && !digit(s.get(i + 12)) {
+        return Some(12);
+    }
+    [' ', '-'].into_iter().find(|&sep| grouped(i, sep)).map(|_| 14)
+}
+
+fn gstin(s: &[char], i: usize) -> Option<usize> {
+    if ascii_alphanumeric(i.checked_sub(1).and_then(|p| s.get(p))) {
+        return None;
+    }
+    let state = s.get(i..i + 2)?;
+    let state: String = state.iter().collect();
+    let state = state.parse::<u8>().ok()?;
+    if !(1..=37).contains(&state)
+        || !(2..7).all(|n| ascii_alpha(s.get(i + n)))
+        || !(7..11).all(|n| digit(s.get(i + n)))
+        || !ascii_alpha(s.get(i + 11))
+        || !ascii_alphanumeric(s.get(i + 12))
+        || s.get(i + 13).copied().map(|c| c.eq_ignore_ascii_case(&'z')) != Some(true)
+        || !ascii_alphanumeric(s.get(i + 14))
+    {
+        return None;
+    }
+    (!ascii_alphanumeric(s.get(i + 15))).then_some(15)
+}
+
+fn indian_mobile(s: &[char], i: usize) -> Option<usize> {
+    if digit(i.checked_sub(1).and_then(|p| s.get(p))) {
+        return None;
+    }
+    let (start, prefix) = if s.get(i) == Some(&'+') && s.get(i + 1) == Some(&'9') && s.get(i + 2) == Some(&'1') {
+        let separator = matches!(s.get(i + 3), Some(' ' | '-'));
+        (i + 3 + usize::from(separator), 3 + usize::from(separator))
+    } else if s.get(i) == Some(&'0') && matches!(s.get(i + 1), Some('6'..='9')) {
+        (i + 1, 1)
+    } else {
+        (i, 0)
+    };
+    if !matches!(s.get(start), Some('6'..='9')) {
+        return None;
+    }
+    let (end, n) = digit_run(s, start, &[' ', '-'], 12);
+    (n == 10 && !digit(s.get(end))).then_some(prefix + end - start)
+}
+
+fn upi_id(s: &[char], i: usize) -> Option<usize> {
+    let local = |c: &char| c.is_ascii_alphanumeric() || "._-".contains(*c);
+    if !s.get(i).is_some_and(local) || i.checked_sub(1).and_then(|p| s.get(p)).is_some_and(local) {
+        return None;
+    }
+    let mut at = i;
+    while s.get(at).is_some_and(local) {
+        at += 1;
+    }
+    if at.saturating_sub(i) < 2 || s.get(at) != Some(&'@') {
+        return None;
+    }
+    let mut end = at + 1;
+    while s.get(end).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '.') {
+        end += 1;
+    }
+    (end.saturating_sub(at + 1) >= 2 && !ascii_alphanumeric(s.get(end))).then_some(end - i)
+}
+
+fn ifsc(s: &[char], i: usize) -> Option<usize> {
+    const CHECKS: [fn(Option<&char>) -> bool; 11] = [
+        ascii_alpha,
+        ascii_alpha,
+        ascii_alpha,
+        ascii_alpha,
+        |c| c == Some(&'0'),
+        ascii_alphanumeric,
+        ascii_alphanumeric,
+        ascii_alphanumeric,
+        ascii_alphanumeric,
+        ascii_alphanumeric,
+        ascii_alphanumeric,
+    ];
+    identifier(s, i, &CHECKS)
+}
+
+fn passport(s: &[char], i: usize) -> Option<usize> {
+    const CHECKS: [fn(Option<&char>) -> bool; 8] = [ascii_alpha, digit, digit, digit, digit, digit, digit, digit];
+    identifier(s, i, &CHECKS)
+}
+
+fn voter_id(s: &[char], i: usize) -> Option<usize> {
+    const CHECKS: [fn(Option<&char>) -> bool; 10] = [ascii_alpha, ascii_alpha, ascii_alpha, digit, digit, digit, digit, digit, digit, digit];
+    identifier(s, i, &CHECKS)
+}
+
+fn cin(s: &[char], i: usize) -> Option<usize> {
+    if !matches!(s.get(i), Some('l' | 'L' | 'u' | 'U')) || ascii_alphanumeric(i.checked_sub(1).and_then(|p| s.get(p))) {
+        return None;
+    }
+    if !(1..6).all(|n| digit(s.get(i + n)))
+        || !(6..8).all(|n| ascii_alpha(s.get(i + n)))
+        || !(8..12).all(|n| digit(s.get(i + n)))
+        || !(12..15).all(|n| ascii_alpha(s.get(i + n)))
+        || !(15..21).all(|n| digit(s.get(i + n)))
+    {
+        return None;
+    }
+    (!ascii_alphanumeric(s.get(i + 21))).then_some(21)
+}
+
+fn ip_address(s: &[char], i: usize) -> Option<usize> {
+    if ascii_alphanumeric(i.checked_sub(1).and_then(|p| s.get(p))) || i.checked_sub(1).and_then(|p| s.get(p)) == Some(&':') {
+        return None;
+    }
+    let mut end = i;
+    while s.get(end).is_some_and(|c| c.is_ascii_hexdigit() || matches!(*c, ':' | '.')) {
+        end += 1;
+    }
+    let mut candidate_end = end;
+    while candidate_end > i && s.get(candidate_end - 1) == Some(&'.') {
+        candidate_end -= 1;
+    }
+    let candidate: String = s.get(i..candidate_end)?.iter().collect();
+    let valid_v4 =
+        candidate.split('.').count() == 4 && candidate.split('.').all(|part| !part.is_empty() && part.len() <= 3 && part.parse::<u8>().is_ok());
+    let valid_v6 = candidate.contains(':') && Ipv6Addr::from_str(&candidate).is_ok();
+    (candidate_end > i && (valid_v4 || valid_v6) && !ascii_alphanumeric(s.get(candidate_end))).then_some(candidate_end - i)
+}
+
 fn ssn(s: &[char], i: usize) -> Option<usize> {
     if digit(i.checked_sub(1).and_then(|p| s.get(p))) {
         return None;
@@ -285,6 +515,16 @@ pub fn find(pattern: Pattern, text: &[char]) -> Vec<Range<usize>> {
         Pattern::CreditCard => credit_card,
         Pattern::Ssn => ssn,
         Pattern::Date => date,
+        Pattern::Pan => pan,
+        Pattern::Aadhaar => aadhaar,
+        Pattern::Gstin => gstin,
+        Pattern::IndianMobile => indian_mobile,
+        Pattern::UpiId => upi_id,
+        Pattern::Ifsc => ifsc,
+        Pattern::Passport => passport,
+        Pattern::VoterId => voter_id,
+        Pattern::Cin => cin,
+        Pattern::IpAddress => ip_address,
     };
     let mut out = Vec::new();
     let mut i = 0;
@@ -427,6 +667,30 @@ mod tests {
         );
         // "Mai" alone, a dotted day without a month and an unknown word are not dates.
         assert_eq!(found(Pattern::Date, "Mai 2024, Kapitel 5. Absatz 2024, 5 Oktoberfest 2024"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn indian_sensitive_identifiers() {
+        assert_eq!(found(Pattern::Pan, "PAN: ABCDE1234F; not ABCD1234F."), ["ABCDE1234F"]);
+        assert_eq!(
+            found(Pattern::Aadhaar, "IDs 234567890123, 2345 6789 0123 and 2345-6789-0123; not 123456789012."),
+            ["234567890123", "2345 6789 0123", "2345-6789-0123"]
+        );
+        assert_eq!(found(Pattern::Gstin, "GSTIN 27ABCDE1234F1Z5, not 00ABCDE1234F1Z5."), ["27ABCDE1234F1Z5"]);
+        assert_eq!(
+            found(Pattern::IndianMobile, "Call +91 98765 43210, 09876543210 or 91234-56789; not 5123456789."),
+            ["+91 98765 43210", "09876543210", "91234-56789"]
+        );
+        assert_eq!(found(Pattern::UpiId, "Pay alice.smith@oksbi, bob-12@ybl; no x@y."), ["alice.smith@oksbi", "bob-12@ybl"]);
+        assert_eq!(found(Pattern::Ifsc, "IFSC HDFC0001234; no HDFC1001234."), ["HDFC0001234"]);
+        assert_eq!(found(Pattern::Passport, "Passport A1234567, not AA1234567."), ["A1234567"]);
+        assert_eq!(found(Pattern::VoterId, "EPIC ABC1234567, not AB1234567."), ["ABC1234567"]);
+        assert_eq!(found(Pattern::Cin, "CIN L12345MH2020PLC123456, not X12345MH2020PLC123456."), ["L12345MH2020PLC123456"]);
+    }
+
+    #[test]
+    fn ip_addresses_are_validated() {
+        assert_eq!(found(Pattern::IpAddress, "Hosts 192.168.1.1, 2001:db8::1; not 999.168.1.1 or 2001:db8:::1."), ["192.168.1.1", "2001:db8::1"]);
     }
 
     #[test]

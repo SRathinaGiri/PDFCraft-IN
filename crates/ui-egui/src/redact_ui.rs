@@ -4,7 +4,10 @@
 //! confirmation, as Acrobat asks) or clear them.
 
 use egui::{Color32, CornerRadius, Pos2, Rect, Stroke};
-use pdfcraft_engine::{Edit, NewAnnotation, REDACT_PATTERNS, REDACTION_CODE_SETS, RedactPattern, RedactionCodeSet, Rgb, Shape, Style, rect_quad};
+use pdfcraft_engine::{
+    Edit, NewAnnotation, REDACT_INDIA_SENSITIVE_PATTERNS, REDACT_PATTERNS, REDACTION_CODE_SETS, RedactPattern, RedactionCodeSet, Rgb, Shape, Style,
+    rect_quad,
+};
 use pdfcraft_render::DocInfo;
 
 use crate::canvas::{DocView, PageXform};
@@ -95,6 +98,8 @@ pub struct SearchDraft {
     pub case_sensitive: bool,
     pub whole_words: bool,
     pub pattern: RedactPattern,
+    /// Search every India-focused sensitive-data pattern in one pass.
+    pub india_sensitive: bool,
     /// The result of the last search (matches marked), shown in the dialog.
     pub found: Option<usize>,
 }
@@ -108,6 +113,7 @@ impl Default for SearchDraft {
             case_sensitive: false,
             whole_words: false,
             pattern: RedactPattern::Phone,
+            india_sensitive: false,
             found: None,
         }
     }
@@ -210,6 +216,9 @@ impl PdfCraftApp {
             let out = r.render(pdfcraft_render::RenderRequest { page, kind: pdfcraft_render::RequestKind::Text, scale: 1.0, ..Default::default() });
             let Some(text) = out.text else { continue };
             let hits = match d.mode {
+                SearchMode::Patterns if d.india_sensitive => {
+                    REDACT_INDIA_SENSITIVE_PATTERNS.iter().flat_map(|p| text.find_with(|c| pdfcraft_engine::find_pattern(*p, c))).collect()
+                }
                 SearchMode::Patterns => text.find_with(|c| pdfcraft_engine::find_pattern(d.pattern, c)),
                 _ => needles.iter().flat_map(|w| text.find_opts(w, d.case_sensitive, d.whole_words)).collect(),
             };
@@ -302,10 +311,13 @@ pub(crate) fn search_body(ui: &mut egui::Ui, d: &mut SearchDraft, t: &Tokens) ->
     ui.add_space(6.0);
     widgets::radio_value(ui, &mut d.mode, SearchMode::Patterns, tl!("Patterns"));
     ui.add_enabled_ui(d.mode == SearchMode::Patterns, |ui| {
-        egui::ComboBox::from_id_salt("redact-pattern").selected_text(tl!(d.pattern.label())).width(240.0).show_ui(ui, |ui| {
-            for p in REDACT_PATTERNS {
-                ui.selectable_value(&mut d.pattern, p, tl!(p.label()));
-            }
+        ui.add(widgets::checkbox(&mut d.india_sensitive, tl!("All India-sensitive data")));
+        ui.add_enabled_ui(!d.india_sensitive, |ui| {
+            egui::ComboBox::from_id_salt("redact-pattern").selected_text(tl!(d.pattern.label())).width(240.0).show_ui(ui, |ui| {
+                for p in REDACT_PATTERNS {
+                    ui.selectable_value(&mut d.pattern, p, tl!(p.label()));
+                }
+            });
         });
     });
     ui.add_space(6.0);

@@ -1,3 +1,17 @@
+# PDFCraft-IN
+
+PDFCraft-IN is a focused India-redaction build of the original [PdfCraft](https://github.com/storytold/pdfcraft) project. PdfCraft remains the upstream project; this repository carries only the modifications listed below.
+
+## Modifications in PDFCraft-IN
+
+- Adds pattern detection for PAN, Aadhaar, GSTIN, Indian mobile numbers, UPI IDs, IFSC codes, Indian passport numbers, voter IDs and CINs.
+- Adds IP-address detection and retains the existing email and payment-card detectors.
+- Adds **Redact a PDF → Find text and redact → Patterns → All India-sensitive data**, which marks every supported India-sensitive identifier, email, card number and IP address in one pass.
+
+Review marked regions, then use **Apply redactions** and save the document to permanently remove the content.
+
+---
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>

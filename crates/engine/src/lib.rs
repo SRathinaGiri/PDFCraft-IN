@@ -130,7 +130,8 @@ pub use pdfcraft_preflight as pdfa;
 pub use pdfcraft_print as print;
 pub use pdfcraft_redact::codes::{CODE_SETS as REDACTION_CODE_SETS, CodeSet as RedactionCodeSet};
 pub use pdfcraft_redact::patterns::{
-    MAX_WORDS as REDACT_MAX_WORDS, PATTERNS as REDACT_PATTERNS, Pattern as RedactPattern, find as find_pattern, word_list as redact_word_list,
+    INDIA_SENSITIVE_PATTERNS as REDACT_INDIA_SENSITIVE_PATTERNS, MAX_WORDS as REDACT_MAX_WORDS, PATTERNS as REDACT_PATTERNS,
+    Pattern as RedactPattern, find as find_pattern, word_list as redact_word_list,
 };
 pub use pdfcraft_redact::sanitize::{HIDDEN, Hidden};
 pub use pdfcraft_sign as sign;

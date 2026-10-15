@@ -2987,6 +2987,19 @@ fn redacting_through_tools() {
 }
 
 #[test]
+fn indian_pattern_redaction_through_tools() {
+    let dir = workdir("redact-indian-pattern");
+    std::fs::write(dir.join("memo.txt"), "PAN ABCDE1234F is private\nPublic line").unwrap();
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_create", json!({ "from": "text", "path": "memo.txt" }))["doc"].as_u64().unwrap();
+    let marked = ok(&mut a, "redact_mark", json!({ "doc": doc, "pattern": "pan" }));
+    assert_eq!((marked["marked"].as_u64(), marked["marks_pending"].as_u64()), (Some(1), Some(1)));
+    ok(&mut a, "redact_apply", json!({ "doc": doc }));
+    let text = &page_text(&mut a, doc)[0];
+    assert!(!text.contains("ABCDE1234F") && text.contains("Public line"), "{text}");
+}
+
+#[test]
 fn redacting_with_codes_through_tools() {
     let dir = workdir("redact-codes");
     std::fs::write(dir.join("memo.txt"), "Informant Jane Roe met the agent\nPublic line").unwrap();
